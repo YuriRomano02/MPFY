@@ -1,0 +1,12 @@
+{
+  "name": "psp-vibe-player",
+  "version": "1.0.0",
+  "description": "Un lettore musicale stile PSP con vibes XMB",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^42.0.1"
+  }
+}

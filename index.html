@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>PSP Vibe Player</title>
+    <style>
+        :root { --text: #00ff00; --bg: #000; --accent: #00ffff; --accent2: #ff00ff; --panel: rgba(0, 0, 0, 0.98); --panel-border: rgba(0, 255, 255, 0.4); --line: rgba(0, 255, 255, 0.2); }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000000; font-family: 'OCR-A', 'Courier New', monospace; color: var(--text); }
+        
+        /* Scanline effect */
+        body::after { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px); pointer-events: none; z-index: 100; }
+        
+        canvas#bg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.15); z-index: 2; }
+        .content { position: relative; z-index: 3; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+        #setup { text-align: center; }
+        .btn { padding: 12px 28px; background: rgba(0,0,0,0.7); border: 2px solid var(--accent); color: var(--text); cursor: pointer; transition: 0.2s ease; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; border-radius: 2px; text-shadow: 0 0 10px var(--accent); }
+        .btn:hover { background: var(--accent); color: #000; text-shadow: 0 0 5px rgba(0,0,0,0.5); }
+
+        #player { width: min(480px, 100%); display: flex; flex-direction: column; gap: 16px; align-items: center; }
+        
+        /* PSP Screen with thick bezel */
+        .screen { width: 100%; max-width: 480px; aspect-ratio: 4/3; background: #000000; border: 12px solid #1a1a1a; border-radius: 8px; box-shadow: 0 0 30px rgba(0,255,255,0.3), inset 0 0 30px rgba(0,0,0,0.8), 0 20px 60px rgba(0,0,0,0.8); padding: 16px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        .screen::before { content: ''; position: absolute; inset: 0; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,255,255,0.2); pointer-events: none; }
+        
+        .screen-top { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
+        
+        .album-box { width: 64px; height: 64px; border-radius: 0px; background: #000000; border: 1px solid var(--accent); overflow: visible; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px var(--accent), inset 0 0 10px rgba(0,255,255,0.2); }
+        .album-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        
+        .track-info { display: flex; flex-direction: column; gap: 4px; }
+        .track-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; line-height: 1; text-shadow: 0 0 10px var(--accent); }
+        .track-artist { font-size: 0.75rem; opacity: 0.8; letter-spacing: 1px; text-transform: uppercase; }
+        .file-badge { padding: 4px 8px; border-radius: 0px; border: 1px solid var(--accent); background: rgba(0,0,0,0.5); color: var(--accent); font-size: 0.7rem; letter-spacing: 0.5px; white-space: nowrap; text-shadow: 0 0 5px var(--accent); }
+        .track-meta-small { font-size: 0.7rem; opacity: 0.7; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+        
+        #waveform { width: 100%; height: 80px; border-radius: 0px; background: #000000; border: 1px solid var(--accent); box-shadow: inset 0 0 10px rgba(0,255,255,0.1), 0 0 10px rgba(0,255,255,0.2); flex: 1; }
+        
+        .screen-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; font-size: 0.7rem; }
+        .control-panel { opacity: 0.8; letter-spacing: 1px; text-transform: uppercase; }
+        .control-panel::before { content: '◆'; margin-right: 4px; color: var(--accent2); }
+
+        .controls { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 6px; }
+        .control-btn { min-width: 100px; padding: 10px 14px; background: rgba(0,0,0,0.6); border: 1px solid var(--accent); color: var(--text); cursor: pointer; font-size: 0.85rem; transition: transform 0.2s ease, background 0.2s ease; border-radius: 2px; text-shadow: 0 0 8px var(--accent); }
+        .control-btn:hover { background: var(--accent); color: #000; text-shadow: none; transform: scale(1.05); }
+
+        .volume-section { display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
+        .volume-label { font-size: 0.75rem; letter-spacing: 1px; opacity: 0.8; text-transform: uppercase; }
+        .volume-btn { width: 36px; height: 36px; display: grid; place-items: center; background: rgba(0,0,0,0.6); border: 1px solid var(--accent); color: var(--text); cursor: pointer; transition: background 0.2s ease; border-radius: 2px; font-size: 1rem; text-shadow: 0 0 8px var(--accent); }
+        .volume-btn:hover { background: var(--accent); color: #000; text-shadow: none; }
+        .volume-display { min-width: 45px; text-align: center; font-weight: 700; letter-spacing: 0.5px; font-size: 0.85rem; }
+
+        .hidden { display: none; }
+        @media (max-width: 700px) {
+            .screen { max-width: 100%; }
+            .track-title { font-size: 0.95rem; }
+            .album-box { width: 56px; height: 56px; }
+            #waveform { height: 70px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="bg-canvas"></canvas>
+    <div class="overlay"></div>
+    
+    <div class="content">
+        <div id="setup">
+            <h1 style="font-weight: 100;">PSP VIBE PLAYER</h1>
+            <button class="btn" id="choose-folder">SELEZIONA CARTELLA MUSICA</button>
+        </div>
+
+        <div id="player" class="hidden">
+            <div class="screen">
+                <div class="screen-top">
+                    <div class="album-box" id="album-art">♪</div>
+                    <div class="track-info">
+                        <div class="track-title" id="title">CARICAMENTO...</div>
+                        <div class="track-artist">SONY PSP</div>
+                    </div>
+                    <div class="file-badge">MP3</div>
+                </div>
+                <div class="track-meta-small" id="song-count"></div>
+                <canvas id="waveform"></canvas>
+                <div class="screen-footer">
+                    <div class="control-panel">XMB™ Control Panel</div>
+                    <div class="file-badge">PLAYING</div>
+                </div>
+            </div>
+            <div class="controls">
+                <button class="control-btn" id="prev-btn">◄◄ PREV</button>
+                <button class="control-btn" id="play-btn">▶ PLAY</button>
+                <button class="control-btn" id="next-btn">NEXT ►►</button>
+            </div>
+            
+            <div class="volume-section">
+                <span class="volume-label">VOLUME</span>
+                <button class="volume-btn" id="vol-down">−</button>
+                <span class="volume-display" id="vol-display">100%</span>
+                <button class="volume-btn" id="vol-up">+</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
