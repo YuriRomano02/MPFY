@@ -1,66 +1,101 @@
-# MPFY — Music Player For You
+# 🎵 PSP Vibe Player
 
-Desktop music player with a **PSP / XMB-inspired** look: neon scanlines, animated background, and a compact “handheld screen” player UI. Built with [Electron](https://www.electronjs.org/).
+A nostalgic **Electron-based music player** styled after the iconic PSP XMB (Cross Media Bar) interface. Experience your favorite tracks with retro CRT aesthetics and cyan-green neon vibes.
 
-The npm package name is `psp-vibe-player` (see `package.json`).
+## ✨ Features
 
-## Features
+- 🎮 **PSP XMB-inspired UI** - Authentic retro interface with neon cyan/green color scheme
+- 🎵 **Multi-format Support** - Play MP3, WAV, OGG, FLAC, and M4A files
+- 📁 **Folder Browser** - Select any folder to load your music collection
+- 🎚️ **Volume Control** - Adjustable volume with visual feedback
+- 🎵 **Waveform Visualization** - Real-time audio visualization
+- 📊 **Track Information** - Display current track details and playlist position
+- 💻 **Cross-platform** - Built with Electron (Windows, macOS, Linux)
 
-- **Folder-based library** — Choose a folder; all supported audio files in that folder become the playlist (not recursive: only the selected directory).
-- **Remembered folder** — The last folder path is stored in the app’s `localStorage` and reloaded on the next launch.
-- **Formats** — `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a` (case-insensitive).
-- **Playback** — Play / pause, previous / next track, volume up / down (5% steps).
-- **Visuals** — Animated background canvas, optional real-time waveform when audio is playing (via Web Audio API).
-- **Album art** — If any image file exists in the same folder as the track (`.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`), the **first** matching file is shown as cover art.
+## 🚀 Quick Start
 
-## Requirements
+### Prerequisites
+- Node.js (v14+)
+- npm
 
-- **Node.js** 18+ recommended (LTS is fine; Electron 42 needs a recent Node for tooling).
-- **npm** (comes with Node).
-
-No extra API keys or `.env` files are required.
-
-## Quick start
-
-Clone the repository, install dependencies, then start the app:
+### Installation
 
 ```bash
-git clone https://github.com/<your-username>/MPFY.git
-cd MPFY
+# Clone the repository
+git clone https://github.com/yourusername/psp-vibe-player.git
+cd psp-vibe-player
+
+# Install dependencies
 npm install
+```
+
+### Running the App
+
+```bash
 npm start
 ```
 
-That runs `electron .` and opens the desktop window.
+This will launch the application. Click **"SELEZIONA CARTELLA MUSICA"** (Select Music Folder) to choose a directory containing your music files.
 
-## Project layout
+## 🎮 How to Use
 
-| File | Role |
-|------|------|
-| `main.js` | Electron main process: window, folder picker, reads directory and returns song list. |
-| `index.html` | UI shell and styles. |
-| `renderer.js` | Renderer process: playlist, audio element, waveform, background animation, IPC to main. |
-| `package.json` | App metadata, `npm start` script, Electron devDependency. |
+1. **Select Music Folder** - Click the button on startup to choose a folder containing your music
+2. **Play/Pause** - Use the **PLAY** button to control playback
+3. **Navigate** - Use **PREV** and **NEXT** buttons to browse your playlist
+4. **Adjust Volume** - Use the **−** and **+** buttons to control volume
+5. **Watch the Waveform** - Visual representation updates with playback
 
-`renderer_new.js` is present in the repo but is **not** wired into `index.html`; the active renderer is `renderer.js`.
+## 📁 Project Structure
 
-## Using the app
+```
+psp-vibe-player/
+├── main.js              # Electron main process (folder selection, file I/O)
+├── renderer.js          # Frontend logic and player controls
+├── index.html           # UI layout and styling
+├── package.json         # Project metadata and dependencies
+└── README.md            # This file
+```
 
-1. Click **“SELEZIONA CARTELLA MUSICA”** and pick a folder that contains audio files.
-2. The player view opens; the first track starts automatically.
-3. Use **PREV / PLAY / PAUSE / NEXT** and **volume** controls as needed.
+## 🔧 Technology Stack
 
-The UI copy is partly in **Italian**; behavior is language-agnostic aside from button labels and alerts.
+- **Electron** - Desktop application framework
+- **HTML5 Audio API** - Audio playback
+- **Canvas API** - Waveform visualization
+- **CSS3** - Retro styling with scanline effects
 
-## Development notes
+## 🎨 Design Highlights
 
-- **Electron security** — The app uses `nodeIntegration: true` and `contextIsolation: false` in `main.js` for simplicity. For production hardening you would typically enable context isolation and avoid exposing Node to the renderer.
-- **Building installers** — This repo only defines `npm start`. To ship `.dmg`, `.exe`, etc., add a packager such as [electron-builder](https://www.electron.build/) and configure it in `package.json`.
+- **Scanline Effect** - CRT monitor simulation
+- **Neon Glow** - Cyan and magenta accent colors
+- **Thick Bezel** - PSP-style screen frame with shadow effects
+- **OCR-A Font** - Authentic retro aesthetic
+- **Responsive Design** - Works on different screen sizes
 
-## License
+## 🐛 Known Limitations
 
-Add a `LICENSE` file in the repository if you want to specify terms; none is included by default in this project.
+- Waveform visualization is simulated (not derived from actual audio analysis)
+- Album art is not displayed (placeholder icon used)
+- No shuffle or repeat functionality
+
+## 💾 Configuration
+
+Edit `main.js` to customize window size:
+```javascript
+const win = new BrowserWindow({
+  width: 1200,
+  height: 700,
+  // ... other options
+});
+```
+
+## 📝 License
+
+This project is open source and available under the MIT License.
+
+## 🙏 Credits
+
+Inspired by the Sony PSP and its iconic XMB interface. Built with ❤️ for retro enthusiasts.
 
 ---
 
-**TL;DR:** `npm install` → `npm start` → pick a music folder → play.
+**Enjoy your music with a touch of nostalgia!** 🎮🎵

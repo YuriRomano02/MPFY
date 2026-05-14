@@ -1,107 +1,420 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <title>PSP Vibe Player</title>
-    <style>
-        :root { --text: #00ff00; --bg: #000; --accent: #00ffff; --accent2: #ff00ff; --panel: rgba(0, 0, 0, 0.98); --panel-border: rgba(0, 255, 255, 0.4); --line: rgba(0, 255, 255, 0.2); }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000000; font-family: 'OCR-A', 'Courier New', monospace; color: var(--text); }
-        
-        /* Scanline effect */
-        body::after { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px); pointer-events: none; z-index: 100; }
-        
-        canvas#bg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.15); z-index: 2; }
-        .content { position: relative; z-index: 3; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
-        #setup { text-align: center; }
-        .btn { padding: 12px 28px; background: rgba(0,0,0,0.7); border: 2px solid var(--accent); color: var(--text); cursor: pointer; transition: 0.2s ease; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; border-radius: 2px; text-shadow: 0 0 10px var(--accent); }
-        .btn:hover { background: var(--accent); color: #000; text-shadow: 0 0 5px rgba(0,0,0,0.5); }
+  <meta charset="UTF-8">
+  <title>PSP Vibe Player</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        #player { width: min(480px, 100%); display: flex; flex-direction: column; gap: 16px; align-items: center; }
-        
-        /* PSP Screen with thick bezel */
-        .screen { width: 100%; max-width: 480px; aspect-ratio: 4/3; background: #000000; border: 12px solid #1a1a1a; border-radius: 8px; box-shadow: 0 0 30px rgba(0,255,255,0.3), inset 0 0 30px rgba(0,0,0,0.8), 0 20px 60px rgba(0,0,0,0.8); padding: 16px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
-        
-        .screen::before { content: ''; position: absolute; inset: 0; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,255,255,0.2); pointer-events: none; }
-        
-        .screen-top { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
-        
-        .album-box { width: 64px; height: 64px; border-radius: 0px; background: #000000; border: 1px solid var(--accent); overflow: visible; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px var(--accent), inset 0 0 10px rgba(0,255,255,0.2); }
-        .album-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        
-        .track-info { display: flex; flex-direction: column; gap: 4px; }
-        .track-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; line-height: 1; text-shadow: 0 0 10px var(--accent); }
-        .track-artist { font-size: 0.75rem; opacity: 0.8; letter-spacing: 1px; text-transform: uppercase; }
-        .file-badge { padding: 4px 8px; border-radius: 0px; border: 1px solid var(--accent); background: rgba(0,0,0,0.5); color: var(--accent); font-size: 0.7rem; letter-spacing: 0.5px; white-space: nowrap; text-shadow: 0 0 5px var(--accent); }
-        .track-meta-small { font-size: 0.7rem; opacity: 0.7; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
-        
-        #waveform { width: 100%; height: 80px; border-radius: 0px; background: #000000; border: 1px solid var(--accent); box-shadow: inset 0 0 10px rgba(0,255,255,0.1), 0 0 10px rgba(0,255,255,0.2); flex: 1; }
-        
-        .screen-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; font-size: 0.7rem; }
-        .control-panel { opacity: 0.8; letter-spacing: 1px; text-transform: uppercase; }
-        .control-panel::before { content: '◆'; margin-right: 4px; color: var(--accent2); }
+    body, html {
+      width: 100%; height: 100%;
+      background: #000;
+      font-family: 'Arial', sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
 
-        .controls { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 6px; }
-        .control-btn { min-width: 100px; padding: 10px 14px; background: rgba(0,0,0,0.6); border: 1px solid var(--accent); color: var(--text); cursor: pointer; font-size: 0.85rem; transition: transform 0.2s ease, background 0.2s ease; border-radius: 2px; text-shadow: 0 0 8px var(--accent); }
-        .control-btn:hover { background: var(--accent); color: #000; text-shadow: none; transform: scale(1.05); }
+    /* ── Setup screen ───────────────────────────────── */
+    #setup {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #080c14;
+      position: relative; overflow: hidden;
+    }
+    #setup-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    .setup-content { position: relative; z-index: 2; text-align: center; }
+    .setup-logo {
+      font-size: 52px; font-weight: 100;
+      letter-spacing: 14px; color: #fff;
+      text-shadow: 0 0 40px rgba(80,140,255,0.5);
+      margin-bottom: 4px;
+    }
+    .setup-sub {
+      font-size: 10px; color: rgba(255,255,255,0.3);
+      letter-spacing: 6px; text-transform: uppercase;
+      margin-bottom: 40px;
+    }
 
-        .volume-section { display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
-        .volume-label { font-size: 0.75rem; letter-spacing: 1px; opacity: 0.8; text-transform: uppercase; }
-        .volume-btn { width: 36px; height: 36px; display: grid; place-items: center; background: rgba(0,0,0,0.6); border: 1px solid var(--accent); color: var(--text); cursor: pointer; transition: background 0.2s ease; border-radius: 2px; font-size: 1rem; text-shadow: 0 0 8px var(--accent); }
-        .volume-btn:hover { background: var(--accent); color: #000; text-shadow: none; }
-        .volume-display { min-width: 45px; text-align: center; font-weight: 700; letter-spacing: 0.5px; font-size: 0.85rem; }
+    /* XMB-style setup menu */
+    .setup-menu { display: flex; flex-direction: column; gap: 2px; min-width: 280px; }
+    .setup-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 16px;
+      border-left: 2px solid transparent;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+      font-size: 12px; letter-spacing: 0.5px;
+      border-radius: 2px;
+    }
+    .setup-item:hover, .setup-item.active {
+      background: rgba(80,140,255,0.12);
+      border-left-color: rgba(80,140,255,0.7);
+    }
+    .setup-item .item-icon {
+      width: 28px; height: 28px; flex-shrink: 0;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px;
+    }
+    .setup-item .item-label { flex: 1; }
+    .setup-item .item-arrow { color: rgba(255,255,255,0.25); font-size: 10px; }
 
-        .hidden { display: none; }
-        @media (max-width: 700px) {
-            .screen { max-width: 100%; }
-            .track-title { font-size: 0.95rem; }
-            .album-box { width: 56px; height: 56px; }
-            #waveform { height: 70px; }
-        }
-    </style>
+    .setup-divider {
+      height: 1px; background: rgba(255,255,255,0.07);
+      margin: 6px 0;
+    }
+    .setup-section-label {
+      font-size: 9px; color: rgba(255,255,255,0.25);
+      letter-spacing: 2px; text-transform: uppercase;
+      padding: 4px 16px 2px;
+    }
+    .setup-recent-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 16px 8px 30px;
+      cursor: pointer; font-size: 11px;
+      color: rgba(255,255,255,0.6);
+      border-left: 2px solid transparent;
+      border-radius: 2px;
+      transition: background .15s, color .15s, border-color .15s;
+      overflow: hidden;
+    }
+    .setup-recent-item:hover {
+      background: rgba(255,255,255,0.05);
+      border-left-color: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+    .setup-recent-item .item-path {
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      direction: rtl; text-align: left;
+    }
+
+    /* ── Player ─────────────────────────────────────── */
+    #player {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      background: #080c14;
+      position: relative; overflow: hidden;
+    }
+
+    #bg-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    #player::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px,
+        transparent 1px, transparent 3px
+      );
+      pointer-events: none; z-index: 50;
+    }
+
+    /* ── Top bar ── */
+    .top-bar {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .art-thumb {
+      width: 48px; height: 48px; flex-shrink: 0;
+      background: #111;
+      border: 1px solid rgba(255,255,255,0.1);
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,0.2); font-size: 18px;
+      overflow: hidden;
+    }
+    .art-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .top-info { flex: 1; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+    .playlist-name {
+      font-size: 11px; color: rgba(255,255,255,0.5);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .track-title {
+      font-size: 16px; font-weight: bold;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      line-height: 1.15;
+    }
+    .track-artist { font-size: 11px; color: rgba(255,255,255,0.5); }
+    .top-right {
+      flex-shrink: 0;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    }
+    .track-counter { font-size: 11px; color: rgba(255,255,255,0.4); letter-spacing: 0.5px; }
+    .format-badge {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: rgba(255,255,255,0.55);
+      font-size: 9px; letter-spacing: 2px; padding: 2px 7px;
+    }
+
+    /* ── Waveform ── */
+    .waveform-area {
+      position: relative; z-index: 10;
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px 14px; overflow: hidden;
+    }
+    #waveform { width: 100%; height: 100%; display: block; }
+
+    /* ── Bottom bar ── */
+    .bottom-bar {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 14px 10px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .progress-wrap { flex: 1; margin-right: 16px; }
+    .progress-track {
+      height: 2px; background: rgba(255,255,255,0.12);
+      border-radius: 1px; margin-bottom: 5px;
+    }
+    .progress-fill {
+      height: 100%; background: #fff; border-radius: 1px;
+      width: 0%; transition: width 0.35s linear;
+    }
+    .hint-row { display: flex; gap: 10px; }
+    .hint {
+      display: flex; align-items: center; gap: 3px;
+      font-size: 9px; color: rgba(255,255,255,0.28);
+    }
+    .hbtn {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 7px; font-weight: bold; cursor: pointer;
+      transition: background .1s;
+    }
+    .hbtn:hover { background: rgba(255,255,255,0.1); }
+    .hbtn.c { border-color: rgba(200,70,70,0.5);   color: rgba(200,70,70,0.8); }
+    .hbtn.s { border-color: rgba(160,90,200,0.5);  color: rgba(160,90,200,0.8); }
+    .hbtn.t { border-color: rgba(70,170,90,0.5);   color: rgba(70,170,90,0.8); }
+    .hbtn.x { border-color: rgba(70,100,200,0.5);  color: rgba(70,100,200,0.8); }
+    .time-display {
+      font-size: 13px; color: rgba(255,255,255,0.7);
+      letter-spacing: 1px; white-space: nowrap;
+    }
+    .time-sep { color: rgba(255,255,255,0.3); }
+
+    /* ── Folder menu overlay ── */
+    .menu-overlay {
+      position: absolute; inset: 0; z-index: 40;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(2px);
+      display: flex; align-items: stretch;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    .menu-overlay.open { opacity: 1; pointer-events: all; }
+
+    .menu-panel {
+      width: 300px; min-width: 240px;
+      background: rgba(6,10,22,0.97);
+      border-right: 1px solid rgba(255,255,255,0.08);
+      display: flex; flex-direction: column;
+      transform: translateX(-100%);
+      transition: transform .22s ease;
+      overflow: hidden;
+    }
+    .menu-overlay.open .menu-panel { transform: translateX(0); }
+
+    .menu-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      flex-shrink: 0;
+    }
+    .menu-header .menu-icon {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: rgba(80,140,255,0.15);
+      border: 1px solid rgba(80,140,255,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: rgba(80,140,255,0.9);
+    }
+    .menu-header-title {
+      font-size: 11px; letter-spacing: 2px;
+      text-transform: uppercase; color: rgba(255,255,255,0.6);
+    }
+    .menu-close {
+      margin-left: auto; cursor: pointer;
+      color: rgba(255,255,255,0.3); font-size: 16px; line-height: 1;
+      padding: 2px 4px;
+      transition: color .15s;
+    }
+    .menu-close:hover { color: #fff; }
+
+    .menu-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 0; }
+    .menu-body::-webkit-scrollbar { width: 4px; }
+    .menu-body::-webkit-scrollbar-track { background: transparent; }
+    .menu-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+    .menu-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 16px;
+      cursor: pointer; font-size: 12px;
+      border-left: 2px solid transparent;
+      transition: background .15s, border-color .15s;
+    }
+    .menu-item:hover, .menu-item.selected {
+      background: rgba(80,140,255,0.1);
+      border-left-color: rgba(80,140,255,0.6);
+    }
+    .menu-item.selected { color: #fff; }
+    .menu-item .mi-icon {
+      font-size: 14px; width: 20px;
+      text-align: center; flex-shrink: 0;
+      color: rgba(255,255,255,0.5);
+    }
+    .menu-item.selected .mi-icon { color: rgba(80,140,255,0.9); }
+    .menu-item .mi-label { flex: 1; }
+    .menu-item .mi-arrow { color: rgba(255,255,255,0.2); font-size: 10px; }
+
+    .menu-sep {
+      height: 1px; background: rgba(255,255,255,0.06);
+      margin: 6px 12px;
+    }
+    .menu-section {
+      font-size: 9px; color: rgba(255,255,255,0.22);
+      letter-spacing: 2px; text-transform: uppercase;
+      padding: 8px 16px 4px;
+    }
+
+    .menu-recent {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 16px 9px 28px;
+      cursor: pointer; font-size: 11px;
+      color: rgba(255,255,255,0.55);
+      border-left: 2px solid transparent;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .menu-recent:hover {
+      background: rgba(255,255,255,0.04);
+      border-left-color: rgba(255,255,255,0.15);
+      color: #fff;
+    }
+    .menu-recent.current {
+      color: rgba(80,200,120,0.9);
+      border-left-color: rgba(80,200,120,0.4);
+    }
+    .menu-recent .mr-path {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      direction: rtl; text-align: left;
+    }
+    .menu-recent .mr-del {
+      font-size: 10px; color: rgba(255,255,255,0.15);
+      padding: 2px 4px; flex-shrink: 0;
+      transition: color .1s;
+    }
+    .menu-recent .mr-del:hover { color: rgba(220,80,80,0.8); }
+
+    .menu-empty {
+      font-size: 10px; color: rgba(255,255,255,0.2);
+      padding: 8px 28px; font-style: italic;
+    }
+
+    .hidden { display: none !important; }
+  </style>
 </head>
 <body>
-    <canvas id="bg-canvas"></canvas>
-    <div class="overlay"></div>
-    
-    <div class="content">
-        <div id="setup">
-            <h1 style="font-weight: 100;">PSP VIBE PLAYER</h1>
-            <button class="btn" id="choose-folder">SELEZIONA CARTELLA MUSICA</button>
+
+  <!-- ── Setup ── -->
+  <div id="setup">
+    <canvas id="setup-canvas"></canvas>
+    <div class="setup-content">
+      <div class="setup-logo">PSP</div>
+      <div class="setup-sub">PlayStation Portable</div>
+
+      <div class="setup-menu">
+        <div class="setup-item" id="setup-browse">
+          <div class="item-icon">📂</div>
+          <div class="item-label">Sfoglia cartella...</div>
+          <div class="item-arrow">›</div>
         </div>
 
-        <div id="player" class="hidden">
-            <div class="screen">
-                <div class="screen-top">
-                    <div class="album-box" id="album-art">♪</div>
-                    <div class="track-info">
-                        <div class="track-title" id="title">CARICAMENTO...</div>
-                        <div class="track-artist">SONY PSP</div>
-                    </div>
-                    <div class="file-badge">MP3</div>
-                </div>
-                <div class="track-meta-small" id="song-count"></div>
-                <canvas id="waveform"></canvas>
-                <div class="screen-footer">
-                    <div class="control-panel">XMB™ Control Panel</div>
-                    <div class="file-badge">PLAYING</div>
-                </div>
-            </div>
-            <div class="controls">
-                <button class="control-btn" id="prev-btn">◄◄ PREV</button>
-                <button class="control-btn" id="play-btn">▶ PLAY</button>
-                <button class="control-btn" id="next-btn">NEXT ►►</button>
-            </div>
-            
-            <div class="volume-section">
-                <span class="volume-label">VOLUME</span>
-                <button class="volume-btn" id="vol-down">−</button>
-                <span class="volume-display" id="vol-display">100%</span>
-                <button class="volume-btn" id="vol-up">+</button>
-            </div>
-        </div>
+        <div class="setup-divider"></div>
+        <div class="setup-section-label">Recenti</div>
+        <div id="setup-recents"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Player ── -->
+  <div id="player" class="hidden">
+    <canvas id="bg-canvas"></canvas>
+
+    <div class="top-bar">
+      <div class="art-thumb" id="album-art">♪</div>
+      <div class="top-info">
+        <div class="playlist-name" id="album-name">PSP Vibe Player</div>
+        <div class="track-title"   id="title">---</div>
+        <div class="track-artist"  id="artist"></div>
+      </div>
+      <div class="top-right">
+        <div class="track-counter" id="song-count"></div>
+        <div class="format-badge"  id="format-badge">MP3</div>
+      </div>
     </div>
 
-    <script src="renderer.js"></script>
+    <div class="waveform-area">
+      <canvas id="waveform"></canvas>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="progress-wrap">
+        <div class="progress-track">
+          <div class="progress-fill" id="progress"></div>
+        </div>
+        <div class="hint-row">
+          <div class="hint"><span class="hbtn c" id="btn-circ">○</span><span>Play</span></div>
+          <div class="hint"><span class="hbtn s" id="btn-sq">□</span><span>Prec</span></div>
+          <div class="hint"><span class="hbtn t" id="btn-tri">△</span><span>Succ</span></div>
+          <div class="hint"><span class="hbtn x" id="btn-cross">×</span><span>Cartelle</span></div>
+        </div>
+      </div>
+      <div class="time-display">
+        <span id="time-current">0:00</span>
+        <span class="time-sep"> / </span>
+        <span id="time-total">--:--</span>
+      </div>
+    </div>
+
+    <!-- Folder menu overlay -->
+    <div class="menu-overlay" id="menu-overlay">
+      <div class="menu-panel">
+        <div class="menu-header">
+          <div class="menu-icon">♪</div>
+          <div class="menu-header-title">Cartella Musica</div>
+          <div class="menu-close" id="menu-close">✕</div>
+        </div>
+        <div class="menu-body">
+          <div class="menu-item" id="menu-browse">
+            <span class="mi-icon">📂</span>
+            <span class="mi-label">Sfoglia cartella...</span>
+            <span class="mi-arrow">›</span>
+          </div>
+          <div class="menu-sep"></div>
+          <div class="menu-section">Recenti</div>
+          <div id="menu-recents"></div>
+        </div>
+      </div>
+      <!-- Click outside to close -->
+      <div style="flex:1;" id="menu-backdrop"></div>
+    </div>
+
+  </div>
+
+  <script src="renderer.js"></script>
 </body>
 </html>

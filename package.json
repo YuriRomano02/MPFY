@@ -8,5 +8,8 @@
   },
   "devDependencies": {
     "electron": "^42.0.1"
+  },
+  "dependencies": {
+    "music-metadata": "^11.12.3"
   }
 }

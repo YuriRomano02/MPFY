@@ -1,339 +1,375 @@
 const { ipcRenderer } = require('electron');
-const path = require('path');
 const { pathToFileURL } = require('url');
 
-const setupDiv = document.getElementById('setup');
-const playerDiv = document.getElementById('player');
-const titleEl = document.getElementById('title');
-const progressEl = document.getElementById('progress');
-const bgCanvas = document.getElementById('bg-canvas');
-const ctx = bgCanvas.getContext('2d');
-const waveformCanvas = document.getElementById('waveform');
-const waveformCtx = waveformCanvas.getContext('2d');
-const albumArtEl = document.getElementById('album-art');
-const songCountEl = document.getElementById('song-count');
-const volDisplayEl = document.getElementById('vol-display');
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const setupDiv     = document.getElementById('setup');
+const playerDiv    = document.getElementById('player');
+const titleEl      = document.getElementById('title');
+const artistEl     = document.getElementById('artist');
+const albumNameEl  = document.getElementById('album-name');
+const albumArtEl   = document.getElementById('album-art');
+const progressEl   = document.getElementById('progress');
+const songCountEl  = document.getElementById('song-count');
+const formatBadge  = document.getElementById('format-badge');
+const timeCurEl    = document.getElementById('time-current');
+const timeTotEl    = document.getElementById('time-total');
+const bgCanvas     = document.getElementById('bg-canvas');
+const waveCanvas   = document.getElementById('waveform');
+const setupCanvas  = document.getElementById('setup-canvas');
+const bgCtx        = bgCanvas.getContext('2d');
+const wCtx         = waveCanvas.getContext('2d');
+const sCtx         = setupCanvas.getContext('2d');
 
-let playlist = [];
-let currentIndex = 0;
+// ── State ─────────────────────────────────────────────────────────────────────
+let playlist = [], currentIndex = 0, currentFolder = null;
 let audio = new Audio();
 let isPlaying = false;
-let audioContext;
-let analyser;
-let dataArray;
-let sourceNode;
-let waveTime = 0;
+let volume = 80;
+audio.volume = 0.8;
+let audioCtx, analyser, sourceNode, timeData;
 
-let volume = 50;
-audio.volume = 0.5;
-document.getElementById('vol-display').innerText = '50%';
+// ── Recent folders (max 6) ────────────────────────────────────────────────────
+function getRecents() {
+  try { return JSON.parse(localStorage.getItem('recent-folders') || '[]'); }
+  catch { return []; }
+}
+function addRecent(folder) {
+  let r = getRecents().filter(f => f !== folder);
+  r.unshift(folder);
+  if (r.length > 6) r = r.slice(0, 6);
+  localStorage.setItem('recent-folders', JSON.stringify(r));
+}
+function removeRecent(folder) {
+  const r = getRecents().filter(f => f !== folder);
+  localStorage.setItem('recent-folders', JSON.stringify(r));
+}
 
-document.getElementById('vol-up').addEventListener('click', () => {
-    volume = Math.min(100, volume + 5);
-    audio.volume = volume / 100;
-    volDisplayEl.textContent = volume + '%';
+// ── Render recent folders list ────────────────────────────────────────────────
+function renderSetupRecents() {
+  const container = document.getElementById('setup-recents');
+  const recents = getRecents();
+  if (!recents.length) {
+    container.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,0.2);padding:6px 16px;font-style:italic;">Nessuna cartella recente</div>';
+    return;
+  }
+  container.innerHTML = recents.map(f => `
+    <div class="setup-recent-item" data-path="${f.replace(/"/g, '&quot;')}">
+      <span style="font-size:12px;opacity:.5">📁</span>
+      <span class="item-path">${f}</span>
+    </div>
+  `).join('');
+  container.querySelectorAll('.setup-recent-item').forEach(el => {
+    el.addEventListener('click', () => loadMusic(el.dataset.path));
+  });
+}
+
+function renderMenuRecents() {
+  const container = document.getElementById('menu-recents');
+  const recents = getRecents();
+  if (!recents.length) {
+    container.innerHTML = '<div class="menu-empty">Nessuna cartella recente</div>';
+    return;
+  }
+  container.innerHTML = recents.map(f => `
+    <div class="menu-recent ${f === currentFolder ? 'current' : ''}" data-path="${f.replace(/"/g, '&quot;')}">
+      <span style="font-size:11px;opacity:.5;flex-shrink:0">📁</span>
+      <span class="mr-path">${f}</span>
+      <span class="mr-del" data-del="${f.replace(/"/g, '&quot;')}" title="Rimuovi">✕</span>
+    </div>
+  `).join('');
+  container.querySelectorAll('.menu-recent').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.classList.contains('mr-del')) return;
+      closeMenu();
+      loadMusic(el.dataset.path);
+    });
+  });
+  container.querySelectorAll('.mr-del').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      removeRecent(el.dataset.del);
+      renderMenuRecents();
+    });
+  });
+}
+
+// ── Menu overlay ──────────────────────────────────────────────────────────────
+const menuOverlay = document.getElementById('menu-overlay');
+
+function openMenu() {
+  renderMenuRecents();
+  menuOverlay.classList.add('open');
+}
+function closeMenu() {
+  menuOverlay.classList.remove('open');
+}
+
+document.getElementById('menu-close').addEventListener('click', closeMenu);
+document.getElementById('menu-backdrop').addEventListener('click', closeMenu);
+
+document.getElementById('menu-browse').addEventListener('click', async () => {
+  closeMenu();
+  const f = await ipcRenderer.invoke('select-folder');
+  if (f) loadMusic(f);
 });
 
-document.getElementById('vol-down').addEventListener('click', () => {
-    volume = Math.max(0, volume - 5);
-    audio.volume = volume / 100;
-    volDisplayEl.textContent = volume + '%';
+// ── Setup screen buttons ──────────────────────────────────────────────────────
+document.getElementById('setup-browse').addEventListener('click', async () => {
+  const f = await ipcRenderer.invoke('select-folder');
+  if (f) loadMusic(f);
 });
 
-document.getElementById('play-btn').addEventListener('click', async () => {
-    if (!audioContext) {
-        setupAudioAnalyzer();
+// ── Player buttons ────────────────────────────────────────────────────────────
+document.getElementById('btn-circ') .addEventListener('click', togglePlay);
+document.getElementById('btn-sq')   .addEventListener('click', prevSong);
+document.getElementById('btn-tri')  .addEventListener('click', nextSong);
+document.getElementById('btn-cross').addEventListener('click', openMenu);
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.code === 'Escape') { closeMenu(); return; }
+  if (!playlist.length) return;
+  if (e.code === 'Space')      { e.preventDefault(); togglePlay(); }
+  if (e.code === 'ArrowRight') nextSong();
+  if (e.code === 'ArrowLeft')  prevSong();
+  if (e.code === 'ArrowUp')    { volume = Math.min(100, volume + 5); audio.volume = volume / 100; }
+  if (e.code === 'ArrowDown')  { volume = Math.max(0, volume - 5);   audio.volume = volume / 100; }
+  if (e.key === 'm' || e.key === 'M') openMenu();
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(sec) {
+  if (!sec || isNaN(sec)) return '--:--';
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+}
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+  sourceNode = audioCtx.createMediaElementSource(audio);
+  analyser   = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.82;
+  timeData = new Uint8Array(analyser.fftSize);
+  sourceNode.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+async function togglePlay() {
+  initAudio();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  isPlaying ? audio.pause() : audio.play();
+  isPlaying = !isPlaying;
+}
+
+function prevSong() { currentIndex = (currentIndex - 1 + playlist.length) % playlist.length; playSong(currentIndex); }
+function nextSong() { currentIndex = (currentIndex + 1) % playlist.length; playSong(currentIndex); }
+
+audio.onended = nextSong;
+audio.ontimeupdate = () => {
+  if (!audio.duration) return;
+  progressEl.style.width = (audio.currentTime / audio.duration * 100) + '%';
+  timeCurEl.textContent = fmt(audio.currentTime);
+};
+
+// ── Load track ────────────────────────────────────────────────────────────────
+async function playSong(index) {
+  const song = playlist[index];
+  songCountEl.textContent  = `${index + 1}/${playlist.length}`;
+  titleEl.textContent      = song.name.replace(/\.[^/.]+$/, '');
+  artistEl.textContent     = '';
+  albumNameEl.textContent  = currentFolder ? currentFolder.split(/[\\/]/).pop() : '';
+  albumArtEl.innerHTML     = '♪';
+  timeTotEl.textContent    = '--:--';
+  progressEl.style.width   = '0%';
+  formatBadge.textContent  = song.name.split('.').pop().toUpperCase();
+
+  initAudio();
+  audio.src = pathToFileURL(song.path).href;
+  audio.play();
+  isPlaying = true;
+
+  ipcRenderer.invoke('get-track-info', song.path).then(info => {
+    if (!info) return;
+    if (info.title)    titleEl.textContent     = info.title;
+    if (info.artist)   artistEl.textContent    = info.artist;
+    if (info.album)    albumNameEl.textContent = info.album;
+    if (info.duration) timeTotEl.textContent   = fmt(info.duration);
+
+    if (info.hasArt) {
+      const img = new Image();
+      img.onload = () => {
+        albumArtEl.innerHTML = '';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        albumArtEl.appendChild(img);
+      };
+      img.onerror = () => console.warn('[art] errore caricamento immagine');
+      img.src = `psp-art://cover?t=${Date.now()}`;
     }
-    if (audioContext && audioContext.state === 'suspended') {
-        await audioContext.resume();
-    }
+  });
+}
 
-    if (isPlaying) {
-        audio.pause();
-        isPlaying = false;
-        document.getElementById('play-btn').innerText = '▶ PLAY';
-    } else {
-        audio.play();
-        isPlaying = true;
-        document.getElementById('play-btn').innerText = '❚❚ PAUSE';
-    }
-});
-
-document.getElementById('prev-btn').addEventListener('click', () => {
-    currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-    playSong(currentIndex);
-});
-
-document.getElementById('next-btn').addEventListener('click', () => {
-    currentIndex = (currentIndex + 1) % playlist.length;
-    playSong(currentIndex);
-});
-
-document.getElementById('choose-folder').addEventListener('click', async () => {
-    try {
-        const folderPath = await ipcRenderer.invoke('select-folder');
-        if (folderPath) {
-            localStorage.setItem('music-folder', folderPath);
-            await loadMusic(folderPath);
-        }
-    } catch (err) {
-        console.error('Error selecting folder:', err);
-        alert('Errore nella selezione della cartella');
-    }
-});
-
+// ── Load folder ───────────────────────────────────────────────────────────────
 async function loadMusic(folderPath) {
-    try {
-        playlist = await ipcRenderer.invoke('get-songs', folderPath);
-        if (playlist.length > 0) {
-            setupDiv.classList.add('hidden');
-            playerDiv.classList.remove('hidden');
-            songCountEl.textContent = `${playlist.length} brani`;
-            currentIndex = 0;
-            playSong(0);
-        } else {
-            alert('Nessun file audio trovato nella cartella');
-        }
-    } catch (err) {
-        console.error('Error loading music:', err);
-        alert('Errore nel caricamento della musica: ' + err.message);
+  playlist = await ipcRenderer.invoke('get-songs', folderPath);
+  if (!playlist.length) { alert('Nessun file audio trovato nella cartella.'); return; }
+  currentFolder = folderPath;
+  addRecent(folderPath);
+  setupDiv.classList.add('hidden');
+  playerDiv.classList.remove('hidden');
+  resizeAll();
+  currentIndex = 0;
+  playSong(0);
+}
+
+// ── Startup ───────────────────────────────────────────────────────────────────
+renderSetupRecents();
+const lastFolder = getRecents()[0];
+if (lastFolder) {
+  // Auto-load last used folder
+  loadMusic(lastFolder);
+}
+
+// ── Canvas resize ─────────────────────────────────────────────────────────────
+const dpr = window.devicePixelRatio || 1;
+let bgW = 0, bgH = 0, wW = 0, wH = 0, sW = 0, sH = 0;
+
+function resizeAll() {
+  const fit = (canvas, ctx) => {
+    const r = canvas.parentElement.getBoundingClientRect();
+    canvas.width  = r.width  * dpr;
+    canvas.height = r.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: r.width, h: r.height };
+  };
+  if (!bgCanvas.parentElement) return;
+  ({ w: bgW, h: bgH } = fit(bgCanvas, bgCtx));
+  ({ w: wW,  h: wH  } = (() => {
+    const r = waveCanvas.getBoundingClientRect();
+    waveCanvas.width  = r.width  * dpr;
+    waveCanvas.height = r.height * dpr;
+    wCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: r.width, h: r.height };
+  })());
+  const sr = setupCanvas.getBoundingClientRect();
+  setupCanvas.width  = sr.width  * dpr;
+  setupCanvas.height = sr.height * dpr;
+  sCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sW = sr.width; sH = sr.height;
+}
+window.addEventListener('resize', resizeAll);
+setTimeout(resizeAll, 80);
+
+// ── Animation ─────────────────────────────────────────────────────────────────
+let t = 0;
+
+function drawWaves(ctx, w, h, time, waves) {
+  waves.forEach(wave => {
+    ctx.beginPath();
+    const baseY = h * wave.y;
+    for (let x = 0; x <= w; x += 2) {
+      const y = baseY + Math.sin(x * wave.freq + time * wave.sp) * wave.amp;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+    ctx.fillStyle = wave.color;
+    ctx.fill();
+  });
 }
 
-function playSong(index) {
-    const song = playlist[index];
-    titleEl.innerText = song.name.replace(/\.[^/.]+$/, "");
-    if (!audioContext) {
-        setupAudioAnalyzer();
-    }
-    const fileUrl = pathToFileURL(song.path).href;
-    audio.src = fileUrl;
-    audio.play();
-    isPlaying = true;
-    
-    loadAlbumArt(song.path);
+const BG_WAVES = [
+  { y: 0.72, amp: 14, freq: 0.014, sp: 0.30, color: 'rgba(40,100,220,0.07)' },
+  { y: 0.78, amp: 10, freq: 0.020, sp: 0.50, color: 'rgba(40,100,220,0.05)' },
+  { y: 0.65, amp: 18, freq: 0.010, sp: 0.20, color: 'rgba(40,100,220,0.05)' },
+];
+
+function drawBg() {
+  bgCtx.fillStyle = '#080c14';
+  bgCtx.fillRect(0, 0, bgW, bgH);
+  drawWaves(bgCtx, bgW, bgH, t, BG_WAVES);
 }
 
-function loadAlbumArt(songPath) {
-    console.log('=== ALBUM ART LOAD START ===');
-    console.log('Song path:', songPath);
-    
-    const fs = require('fs');
-    const songDir = path.dirname(songPath);
-    console.log('Song dir:', songDir);
-    
-    try {
-        const allFiles = fs.readdirSync(songDir);
-        console.log('All files:', allFiles);
-        
-        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-        const imageFiles = allFiles.filter(file => {
-            const ext = file.split('.').pop().toLowerCase();
-            return imageExts.includes(ext);
-        });
-
-        console.log('Filtered images:', imageFiles);
-
-        if (imageFiles.length > 0) {
-            const imagePath = path.join(songDir, imageFiles[0]);
-            console.log('Loading:', imagePath);
-            
-            try {
-                const fileBuffer = fs.readFileSync(imagePath);
-                console.log('File size:', fileBuffer.length);
-                
-                const base64 = fileBuffer.toString('base64');
-                const ext = imageFiles[0].split('.').pop().toLowerCase();
-                const mimeType = ext === 'jpg' ? 'jpeg' : ext;
-                
-                albumArtEl.innerHTML = `<img src="data:image/${mimeType};base64,${base64}" style="width:100%;height:100%;object-fit:cover;">`;
-                console.log('✓ Album loaded from:', imageFiles[0]);
-                console.log('=== ALBUM ART LOAD END ===');
-                return;
-            } catch (readErr) {
-                console.error('Cannot read file:', readErr);
-            }
-        }
-
-        console.log('No images found');
-        albumArtEl.innerHTML = '♪';
-    } catch (err) {
-        console.error('Album error:', err);
-        albumArtEl.innerHTML = '♪';
-    }
-    console.log('=== ALBUM ART LOAD END ===');
-}
-
-function setupAudioAnalyzer() {
-    if (audioContext) return;
-
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    sourceNode = audioContext.createMediaElementSource(audio);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    dataArray = new Uint8Array(analyser.fftSize);
-    sourceNode.connect(analyser);
-    analyser.connect(audioContext.destination);
-    resizeWaveform();
-}
-
-function resizeWaveform() {
-    const width = waveformCanvas.clientWidth;
-    const height = waveformCanvas.clientHeight;
-    const dpr = window.devicePixelRatio || 1;
-    waveformCanvas.width = width * dpr;
-    waveformCanvas.height = height * dpr;
-    waveformCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+function drawSetupBg() {
+  sCtx.fillStyle = '#080c14';
+  sCtx.fillRect(0, 0, sW, sH);
+  drawWaves(sCtx, sW, sH, t, BG_WAVES);
 }
 
 function drawWaveform() {
-    const width = waveformCanvas.clientWidth;
-    const height = waveformCanvas.clientHeight;
-    waveformCtx.clearRect(0, 0, width, height);
+  wCtx.clearRect(0, 0, wW, wH);
+  if (!wW || !wH) return;
+  const midY = wH / 2;
 
-    waveformCtx.fillStyle = 'rgba(255,255,255,0.04)';
-    waveformCtx.fillRect(0, 0, width, height);
+  if (analyser && isPlaying) {
+    analyser.getByteTimeDomainData(timeData);
+    const slice = wW / timeData.length;
 
-    waveformCtx.lineWidth = 2;
-    waveformCtx.strokeStyle = 'rgba(130,217,255,0.95)';
-    waveformCtx.beginPath();
-
-    if (analyser && isPlaying) {
-        analyser.getByteTimeDomainData(dataArray);
-        const sliceWidth = width / dataArray.length;
-        let x = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            const v = dataArray[i] / 128.0;
-            const y = (v * height) / 2;
-            if (i === 0) {
-                waveformCtx.moveTo(x, y);
-            } else {
-                waveformCtx.lineTo(x, y);
-            }
-            x += sliceWidth;
-        }
-    } else {
-        const mid = height / 2;
-        const amplitude = 16;
-        waveformCtx.moveTo(0, mid);
-        for (let x = 0; x <= width; x += 6) {
-            const y = mid + Math.sin((x / width) * 10 + waveTime * 0.015) * amplitude;
-            waveformCtx.lineTo(x, y);
-        }
+    // Upper filled shape
+    wCtx.beginPath();
+    wCtx.moveTo(0, midY);
+    for (let i = 0; i < timeData.length; i++) {
+      const v = (timeData[i] / 128) - 1;
+      wCtx.lineTo(i * slice, midY - v * wH * 0.44);
     }
+    wCtx.lineTo(wW, midY); wCtx.closePath();
+    const gU = wCtx.createLinearGradient(0, 0, 0, midY);
+    gU.addColorStop(0, 'rgba(255,255,255,0.5)');
+    gU.addColorStop(1, 'rgba(255,255,255,0.12)');
+    wCtx.fillStyle = gU; wCtx.fill();
 
-    waveformCtx.stroke();
+    // Lower mirror
+    wCtx.beginPath();
+    wCtx.moveTo(0, midY);
+    for (let i = 0; i < timeData.length; i++) {
+      const v = (timeData[i] / 128) - 1;
+      wCtx.lineTo(i * slice, midY + v * wH * 0.44);
+    }
+    wCtx.lineTo(wW, midY); wCtx.closePath();
+    const gD = wCtx.createLinearGradient(0, midY, 0, wH);
+    gD.addColorStop(0, 'rgba(255,255,255,0.12)');
+    gD.addColorStop(1, 'rgba(255,255,255,0.03)');
+    wCtx.fillStyle = gD; wCtx.fill();
+
+    // Bright top line
+    wCtx.beginPath();
+    wCtx.strokeStyle = 'rgba(255,255,255,0.88)';
+    wCtx.lineWidth = 1.5;
+    for (let i = 0; i < timeData.length; i++) {
+      const v = (timeData[i] / 128) - 1;
+      const y = midY - v * wH * 0.44;
+      i === 0 ? wCtx.moveTo(0, y) : wCtx.lineTo(i * slice, y);
+    }
+    wCtx.stroke();
+
+  } else {
+    // Idle gentle wave
+    wCtx.beginPath();
+    for (let x = 0; x <= wW; x += 2) {
+      const y = midY + Math.sin((x / wW) * Math.PI * 6 + t * 1.2) * (wH * 0.05);
+      x === 0 ? wCtx.moveTo(x, y) : wCtx.lineTo(x, y);
+    }
+    wCtx.lineTo(wW, midY); wCtx.closePath();
+    const gi = wCtx.createLinearGradient(0, midY - wH * 0.07, 0, midY);
+    gi.addColorStop(0, 'rgba(255,255,255,0.18)');
+    gi.addColorStop(1, 'rgba(255,255,255,0.02)');
+    wCtx.fillStyle = gi; wCtx.fill();
+
+    wCtx.beginPath();
+    wCtx.strokeStyle = 'rgba(255,255,255,0.3)';
+    wCtx.lineWidth = 1.2;
+    for (let x = 0; x <= wW; x += 2) {
+      const y = midY + Math.sin((x / wW) * Math.PI * 6 + t * 1.2) * (wH * 0.05);
+      x === 0 ? wCtx.moveTo(x, y) : wCtx.lineTo(x, y);
+    }
+    wCtx.stroke();
+  }
 }
 
-audio.ontimeupdate = () => {
-    const pct = (audio.currentTime / audio.duration) * 100;
-    progressEl.style.width = pct + '%';
-};
-
-audio.onended = () => {
-    currentIndex = (currentIndex + 1) % playlist.length;
-    playSong(currentIndex);
-};
-
-// Check for saved path on startup
-const savedPath = localStorage.getItem('music-folder');
-if (savedPath) {
-    loadMusic(savedPath);
+function loop() {
+  t += 0.016;
+  if (!setupDiv.classList.contains('hidden')) drawSetupBg();
+  if (!playerDiv.classList.contains('hidden')) { drawBg(); drawWaveform(); }
+  requestAnimationFrame(loop);
 }
-
-// Background Waves - PSP Style Radio Waves
-let w, h;
-function resize() { w = bgCanvas.width = window.innerWidth; h = bgCanvas.height = window.innerHeight; resizeWaveform(); }
-window.onresize = resize;
-resize();
-
-let time = 0;
-function animate(t) {
-    time += 0.016;
-    waveTime += 0.016;
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0,0,w,h);
-    
-    // Emanating radio waves
-    drawRadioWaves(time);
-    
-    // Sine waves
-    drawSineWave(time * 0.0008, 0.004, 60, 'rgba(0, 255, 255, 0.12)');
-    drawSineWave(time * 0.0005, 0.006, 40, 'rgba(255, 0, 255, 0.08)');
-    drawSineWave(time * 0.0003, 0.008, 25, 'rgba(0, 255, 200, 0.06)');
-    
-    // Grid lines
-    drawGrid(time);
-
-    drawWaveform();
-    
-    requestAnimationFrame(animate);
-}
-
-function drawRadioWaves(time) {
-    const centerX = w / 2;
-    const centerY = h / 2;
-    const maxRadius = Math.max(w, h);
-    
-    // Main circle waves
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
-    ctx.lineWidth = 1.5;
-    
-    for(let i = 0; i < 6; i++) {
-        const radius = ((time * 80 + i * 60) % maxRadius);
-        if (radius > 20) {
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-    }
-    
-    // Fading circle waves
-    for(let i = 0; i < 3; i++) {
-        const radius = ((time * 80 + i * 60 + 200) % maxRadius);
-        if (radius > 20) {
-            const alpha = Math.max(0, 1 - (radius / maxRadius));
-            ctx.strokeStyle = `rgba(0, 255, 255, ${0.1 * alpha})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-    }
-}
-
-function drawSineWave(timeVal, freq, amp, color) {
-    ctx.beginPath();
-    ctx.moveTo(0, h/2);
-    for(let x=0; x<=w; x+=2) {
-        let y = Math.sin(x * freq + timeVal) * amp;
-        ctx.lineTo(x, h/2 + y);
-    }
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = color;
-    ctx.stroke();
-}
-
-function drawGrid(time) {
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.04)';
-    ctx.lineWidth = 0.5;
-    const spacing = 40;
-    
-    // Vertical lines
-    for(let x = 0; x < w; x += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-    }
-    
-    // Horizontal lines
-    for(let y = 0; y < h; y += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-    }
-}
-
-requestAnimationFrame(animate);
+requestAnimationFrame(loop);
